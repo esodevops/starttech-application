@@ -97,15 +97,16 @@ jobs:
                        ./backend
 
       # Step 8 — Scan for vulnerabilities with Trivy
-      # Keep scan visible in logs, but do not block delivery for known base-image CVEs.
+      # Use Trivy CLI directly to avoid action post-step failures.
       - name: Scan image for vulnerabilities
-        continue-on-error: true
-        uses: aquasecurity/trivy-action@0.24.0
-        with:
-          image-ref: "${{ env.DOCKER_IMAGE }}:${{ github.sha }}"
-          severity: "HIGH,CRITICAL"
-          ignore-unfixed: true
-          exit-code: "0"
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.52.2 image \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --no-progress \
+            "$DOCKER_IMAGE:${{ github.sha }}" || true
 
       # Step 9 — Push both tags to Docker Hub
       - name: Push Docker image
