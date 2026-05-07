@@ -96,12 +96,40 @@ jobs:
           aws s3 cp build/index.html s3://${{ secrets.S3_BUCKET_NAME }}/index.html \
             --cache-control "no-cache,no-store,must-revalidate"
 
-      # Step 9 — Clear the CloudFront edge cache so users see the new version immediately
+      # Step 9 — Resolve CloudFront distribution ID (secret may be stale after infra recreation)
+      - name: Resolve CloudFront distribution ID
+        id: resolve_cf
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          CF_ID="${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}"
+
+          # If a secret is set, validate that it actually exists.
+          if [ -n "$CF_ID" ] && [ "$CF_ID" != "None" ]; then
+            if aws cloudfront get-distribution --id "$CF_ID" >/dev/null 2>&1; then
+              echo "distribution_id=$CF_ID" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          # Fallback: discover distribution by S3 bucket origin domain.
+          DISCOVERED_CF_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?contains(join(',', Origins.Items[].DomainName), '${{ secrets.S3_BUCKET_NAME }}')].Id | [0]" \
+            --output text)
+
+          if [ -z "$DISCOVERED_CF_ID" ] || [ "$DISCOVERED_CF_ID" = "None" ]; then
+            echo "Could not resolve CloudFront distribution ID."
+            echo "Set CLOUDFRONT_DISTRIBUTION_ID secret to the current distribution ID from Terraform output."
+            exit 1
+          fi
+
+          echo "distribution_id=$DISCOVERED_CF_ID" >> "$GITHUB_OUTPUT"
+
+      # Step 10 — Clear the CloudFront edge cache so users see the new version immediately
       - name: Invalidate CloudFront cache
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: |
           aws cloudfront create-invalidation \
-            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --distribution-id ${{ steps.resolve_cf.outputs.distribution_id }} \
             --paths "/*"
 
       - name: Deployment complete
