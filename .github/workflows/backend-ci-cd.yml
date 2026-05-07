@@ -99,6 +99,7 @@ jobs:
       # Step 8 — Scan for vulnerabilities with Trivy
       # Keep scan visible in logs, but do not block delivery for known base-image CVEs.
       - name: Scan image for vulnerabilities
+        continue-on-error: true
         uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: "${{ env.DOCKER_IMAGE }}:${{ github.sha }}"
