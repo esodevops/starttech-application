@@ -18,10 +18,14 @@ name: Frontend CI/CD
 on:
   push:
     branches: [ main ]
-    paths: [ "frontend/**" ] # only run when frontend code changes
+    paths:
+      - "frontend/**" # run when frontend code changes
+      - ".github/workflows/frontend-ci-cd.yml" # run when this workflow changes
   pull_request:
     branches: [ main ]
-    paths: [ "frontend/**" ]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-ci-cd.yml"
   workflow_dispatch:
     # allow manual trigger from GitHub Actions UI
 
