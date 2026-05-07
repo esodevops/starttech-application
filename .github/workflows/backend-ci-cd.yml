@@ -18,10 +18,14 @@ name: Backend CI/CD
 on:
   push:
     branches: [ main ]
-    paths: [ "backend/**" ] # only run when backend code changes
+    paths:
+      - "backend/**" # run when backend code changes
+      - ".github/workflows/backend-ci-cd.yml" # run when this workflow changes
   pull_request:
     branches: [ main ]
-    paths: [ "backend/**" ]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci-cd.yml"
   workflow_dispatch:
     # allow manual trigger from GitHub Actions UI
 
