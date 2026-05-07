@@ -1,0 +1,103 @@
+# -------------------------------------------------
+# Frontend CI/CD Pipeline (React → S3 + CloudFront)
+#
+# Triggers on every push to main that changes
+# anything under the frontend/ directory.
+#
+# Steps:
+#   1. Install Node.js and dependencies
+#   2. Run unit tests
+#   3. Security scan (npm audit)
+#   4. Build production bundle
+#   5. Upload bundle to S3
+#   6. Invalidate CloudFront cache
+# -------------------------------------------------
+
+name: Frontend CI/CD
+
+on:
+  push:
+    branches: [ main ]
+    paths: [ "frontend/**" ] # only run when frontend code changes
+  pull_request:
+    branches: [ main ]
+    paths: [ "frontend/**" ]
+  workflow_dispatch:
+    # allow manual trigger from GitHub Actions UI
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy React App
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend # all npm commands run here
+
+    steps:
+      # Step 1 — Check out code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2 — Install Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      # Step 3 — Install dependencies
+      - name: Install dependencies
+        run: npm ci # ci is faster and stricter than npm install
+
+      # Step 4 — Run unit tests
+      - name: Run tests
+        run: npm test -- --watchAll=false --passWithNoTests
+
+      # Step 5 — Security scan: fail the build if there are high/critical vulnerabilities
+      - name: Security scan
+        run: npm audit --audit-level=high
+
+      # Step 6 — Build the production React bundle
+      - name: Build
+        run: npm run build
+        env:
+          # The backend API URL is injected at build time
+          REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
+
+      # ---- Deploy steps only run on push to main (not on PRs) ----
+
+      # Step 7 — Authenticate with AWS
+      - name: Configure AWS credentials
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      # Step 8 — Upload the build/ folder to S3
+      # --delete removes old files that are no longer in the build
+      - name: Deploy to S3
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          aws s3 sync build/ s3://${{ secrets.S3_BUCKET_NAME }} \
+            --delete \
+            --cache-control "max-age=31536000,public" \
+            --exclude "index.html"
+
+          # Upload index.html separately with no-cache so users always get the latest version
+          aws s3 cp build/index.html s3://${{ secrets.S3_BUCKET_NAME }}/index.html \
+            --cache-control "no-cache,no-store,must-revalidate"
+
+      # Step 9 — Clear the CloudFront edge cache so users see the new version immediately
+      - name: Invalidate CloudFront cache
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --paths "/*"
+
+      - name: Deployment complete
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: echo "Frontend deployed successfully!"

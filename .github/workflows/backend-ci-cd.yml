@@ -1,0 +1,186 @@
+# -------------------------------------------------
+# Backend CI/CD Pipeline (Golang → Docker → EC2)
+#
+# Triggers on every push to main that changes
+# anything under the backend/ directory.
+#
+# Steps:
+#   1. Run Go unit tests
+#   2. Build Docker image
+#   3. Scan image for vulnerabilities (Trivy)
+#   4. Push image to Docker Hub
+#   5. Deploy to EC2 via rolling update (ASG refresh)
+#   6. Run smoke test to verify deployment
+# -------------------------------------------------
+
+name: Backend CI/CD
+
+on:
+  push:
+    branches: [ main ]
+    paths: [ "backend/**" ] # only run when backend code changes
+  pull_request:
+    branches: [ main ]
+    paths: [ "backend/**" ]
+  workflow_dispatch:
+    # allow manual trigger from GitHub Actions UI
+
+env:
+  DOCKER_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/much-to-do-backend
+
+jobs:
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      # Step 1 — Check out code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2 — Install Go
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: backend/go.sum
+
+      # Step 3 — Download Go module dependencies
+      - name: Download dependencies
+        run: go mod download
+
+      # Step 4 — Run unit tests with race condition detection
+      - name: Run tests
+        run: go test -v -race ./...
+
+      # Step 5 — Check code quality (vet catches common mistakes)
+      - name: Code quality check
+        run: go vet ./...
+
+  build-and-push:
+    name: Build Docker Image & Push
+    runs-on: ubuntu-latest
+    needs: test # only run if tests passed
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 6 — Log in to Docker Hub
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Step 7 — Build and tag the Docker image
+      # Two tags: one with the git SHA (unique per commit) and one 'latest'
+      - name: Build Docker image
+        run: |
+          docker build -t $DOCKER_IMAGE:${{ github.sha }} \
+                       -t $DOCKER_IMAGE:latest \
+                       ./backend
+
+      # Step 8 — Scan for vulnerabilities with Trivy
+      # Fails the build if there are HIGH or CRITICAL CVEs
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ env.DOCKER_IMAGE }}:${{ github.sha }}"
+          severity: "HIGH,CRITICAL"
+          exit-code: "1"
+
+      # Step 9 — Push both tags to Docker Hub
+      - name: Push Docker image
+        run: |
+          docker push $DOCKER_IMAGE:${{ github.sha }}
+          docker push $DOCKER_IMAGE:latest
+
+  deploy:
+    name: Deploy to EC2 (Rolling Update)
+    runs-on: ubuntu-latest
+    needs: build-and-push # only run if image was built and pushed
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 10 — Authenticate with AWS
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      # Step 11 — Update the Launch Template with the new image tag
+      # New instances started by the ASG will use this new image
+      - name: Update Launch Template with new image
+        run: |
+          # Get the current launch template ID
+          LT_ID=$(aws ec2 describe-launch-templates \
+            --filters "Name=tag:Name,Values=starttech-launch-template" \
+            --query "LaunchTemplates[0].LaunchTemplateId" \
+            --output text)
+
+          # Get the current user_data and update the Docker image tag
+          CURRENT_USER_DATA=$(aws ec2 describe-launch-template-versions \
+            --launch-template-id $LT_ID --versions '$Latest' \
+            --query "LaunchTemplateVersions[0].LaunchTemplateData.UserData" \
+            --output text | base64 -d)
+
+          NEW_USER_DATA=$(echo "$CURRENT_USER_DATA" | \
+            sed "s|${{ env.DOCKER_IMAGE }}:.*|${{ env.DOCKER_IMAGE }}:${{ github.sha }}|g")
+
+          # Create a new version of the launch template
+          aws ec2 create-launch-template-version \
+            --launch-template-id $LT_ID \
+            --source-version '$Latest' \
+            --launch-template-data "{\"UserData\":\"$(echo "$NEW_USER_DATA" | base64 -w0)\"}"
+
+      # Step 12 — Trigger a rolling instance refresh
+      # AWS replaces old instances one at a time, keeping at least 50% healthy
+      - name: Start ASG instance refresh (rolling deploy)
+        run: |
+          aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name starttech-asg \
+            --strategy Rolling \
+            --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 120}'
+
+      # Step 13 — Wait for the refresh to complete
+      - name: Wait for rolling deploy to complete
+        run: |
+          echo "Waiting for instance refresh to complete..."
+          # Poll every 30 seconds for up to 10 minutes
+          for i in $(seq 1 20); do
+            STATUS=$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name starttech-asg \
+              --query "InstanceRefreshes[0].Status" \
+              --output text)
+            echo "Status: $STATUS"
+            if [ "$STATUS" = "Successful" ]; then
+              echo "Deploy successful!"
+              exit 0
+            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
+              echo "Deploy failed with status: $STATUS"
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "Timeout waiting for deploy"
+          exit 1
+
+      # Step 14 — Smoke test: check that the /health endpoint returns 200
+      - name: Smoke test
+        run: |
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names starttech-alb \
+            --query "LoadBalancers[0].DNSName" \
+            --output text)
+          echo "Testing http://$ALB_DNS/health"
+          curl --fail --retry 5 --retry-delay 5 http://$ALB_DNS/health
+          echo "Smoke test passed!"
