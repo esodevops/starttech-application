@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react';
 
-// The API URL is injected at build time via the REACT_APP_API_URL env variable.
-// In development it defaults to http://localhost:8080.
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+// In production, always use same-origin /api so CloudFront domain rotations do not break API calls.
+// In development, allow override via REACT_APP_API_URL and fallback to local backend.
+const API_URL =
+  process.env.NODE_ENV === 'development'
+    ? process.env.REACT_APP_API_URL || 'http://localhost:8080'
+    : '';
 
 function App() {
   const [todos, setTodos] = useState([]);
