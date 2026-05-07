@@ -52,6 +52,11 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
+	// Friendly root endpoint for manual browser checks on the ALB URL
+	r.GET("/", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "StartTech backend is running"})
+	})
+
 	// To-do routes (the actual app logic lives in the handlers package)
 	db := mongoClient.Database("muchToDo")
 	registerTodoRoutes(r, db, redisClient)
