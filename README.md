@@ -1,4 +1,4 @@
-[![Frontend CI/CD](https://github.com/esodevops/starttech-application/actions/workflows/frontend-ci-cd.yml/badge.svg)](https://github.com/esodevops/starttech-application/actions/workflows/frontend-ci-cd.yml), [![Backend CI/CD](https://github.com/esodevops/starttech-application/actions/workflows/backend-ci-cd.yml/badge.svg)](https://github.com/esodevops/starttech-application/actions/workflows/backend-ci-cd.yml)
+[![Frontend CI/CD](https://github.com/esodevops/starttech-application/actions/workflows/frontend-ci-cd.yml/badge.svg)](https://github.com/esodevops/starttech-application/actions/workflows/frontend-ci-cd.yml) [![Backend CI/CD](https://github.com/esodevops/starttech-application/actions/workflows/backend-ci-cd.yml/badge.svg)](https://github.com/esodevops/starttech-application/actions/workflows/backend-ci-cd.yml)
 
 # StartTech Application
 
