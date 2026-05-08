@@ -1,3 +1,5 @@
+[![Frontend CI/CD](https://github.com/esodevops/starttech-application/actions/workflows/frontend-ci-cd.yml/badge.svg)](https://github.com/esodevops/starttech-application/actions/workflows/frontend-ci-cd.yml)
+
 # StartTech Application
 
 This is the full-stack application for StartTech, forked from [much-to-do](https://github.com/Innocent9712/much-to-do/tree/feature/full-stack).
