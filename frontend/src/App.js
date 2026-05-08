@@ -10,16 +10,30 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const parseJsonResponse = async (res) => {
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      const bodyPreview = (await res.text()).slice(0, 120);
+      throw new Error(`Expected JSON but got: ${bodyPreview}`);
+    }
+    return res.json();
+  };
+
   // Fetch all to-dos on first render
   useEffect(() => {
     fetch(`${API_URL}/api/todos`)
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`Request failed with status ${res.status}`);
+        }
+        return parseJsonResponse(res);
+      })
       .then((data) => {
         setTodos(data);
         setLoading(false);
       })
-      .catch((err) => {
-        setError('Could not load todos. Is the backend running?');
+      .catch(() => {
+        setError('Could not load todos. API routing is likely not configured on CloudFront yet.');
         setLoading(false);
       });
   }, []);
@@ -33,7 +47,10 @@ function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title }),
     });
-    const newTodo = await res.json();
+    if (!res.ok) {
+      throw new Error(`Request failed with status ${res.status}`);
+    }
+    const newTodo = await parseJsonResponse(res);
     setTodos([...todos, newTodo]);
     setTitle('');
   };
