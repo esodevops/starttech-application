@@ -29,7 +29,7 @@ function App() {
         return parseJsonResponse(res);
       })
       .then((data) => {
-        setTodos(data);
+        setTodos(Array.isArray(data) ? data : []);
         setLoading(false);
       })
       .catch(() => {
