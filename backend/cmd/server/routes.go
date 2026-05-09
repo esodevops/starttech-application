@@ -24,7 +24,8 @@ func registerTodoRoutes(r *gin.Engine, db *mongo.Database, rdb *redis.Client) {
 	col := db.Collection("todos")
 
 	r.GET("/api/todos", func(c *gin.Context) {
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+		defer cancel()
 
 		// Try to serve from Redis cache first
 		if rdb != nil {
@@ -38,18 +39,30 @@ func registerTodoRoutes(r *gin.Engine, db *mongo.Database, rdb *redis.Client) {
 		// Cache miss — fetch from MongoDB
 		cursor, err := col.Find(ctx, bson.M{})
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			status := http.StatusInternalServerError
+			if ctx.Err() != nil {
+				status = http.StatusServiceUnavailable
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
 			return
 		}
+		defer cursor.Close(ctx)
 		var todos []Todo
 		if err := cursor.All(ctx, &todos); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			status := http.StatusInternalServerError
+			if ctx.Err() != nil {
+				status = http.StatusServiceUnavailable
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusOK, todos)
 	})
 
 	r.POST("/api/todos", func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+		defer cancel()
+
 		var input struct{ Title string `json:"title"` }
 		if err := c.ShouldBindJSON(&input); err != nil || input.Title == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "title is required"})
@@ -61,13 +74,17 @@ func registerTodoRoutes(r *gin.Engine, db *mongo.Database, rdb *redis.Client) {
 			Completed: false,
 			CreatedAt: time.Now(),
 		}
-		if _, err := col.InsertOne(context.Background(), todo); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		if _, err := col.InsertOne(ctx, todo); err != nil {
+			status := http.StatusInternalServerError
+			if ctx.Err() != nil {
+				status = http.StatusServiceUnavailable
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
 			return
 		}
 		// Bust the cache so the next GET returns fresh data
 		if rdb != nil {
-			rdb.Del(context.Background(), "todos:all")
+			rdb.Del(ctx, "todos:all")
 		}
 		c.JSON(http.StatusCreated, todo)
 	})

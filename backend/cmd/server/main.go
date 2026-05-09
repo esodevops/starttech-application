@@ -22,15 +22,27 @@ func main() {
 	port := getEnvOrDefault("PORT", "8080")
 
 	// ---- Connect to MongoDB ----
+	mongoOpts := options.Client().
+		ApplyURI(mongoURI).
+		SetServerSelectionTimeout(5 * time.Second).
+		SetConnectTimeout(5 * time.Second)
+
 	mongoClient, err := mongo.Connect(
 		context.Background(),
-		options.Client().ApplyURI(mongoURI),
+		mongoOpts,
 	)
 	if err != nil {
 		log.Fatalf("Failed to connect to MongoDB: %v", err)
 	}
 	defer mongoClient.Disconnect(context.Background())
-	log.Println("Connected to MongoDB")
+
+	pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := mongoClient.Ping(pingCtx, nil); err != nil {
+		log.Printf("MongoDB not ready at startup: %v", err)
+	} else {
+		log.Println("Connected to MongoDB")
+	}
 
 	// ---- Connect to Redis ----
 	// Redis is used as a cache. If it is temporarily unavailable,
