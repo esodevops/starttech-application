@@ -27,10 +27,12 @@ func registerTodoRoutes(r *gin.Engine, db *mongo.Database, rdb *redis.Client) {
 		ctx := context.Background()
 
 		// Try to serve from Redis cache first
-		cached, err := rdb.Get(ctx, "todos:all").Bytes()
-		if err == nil {
-			c.Data(http.StatusOK, "application/json", cached)
-			return
+		if rdb != nil {
+			cached, err := rdb.Get(ctx, "todos:all").Bytes()
+			if err == nil {
+				c.Data(http.StatusOK, "application/json", cached)
+				return
+			}
 		}
 
 		// Cache miss — fetch from MongoDB
@@ -64,7 +66,9 @@ func registerTodoRoutes(r *gin.Engine, db *mongo.Database, rdb *redis.Client) {
 			return
 		}
 		// Bust the cache so the next GET returns fresh data
-		rdb.Del(context.Background(), "todos:all")
+		if rdb != nil {
+			rdb.Del(context.Background(), "todos:all")
+		}
 		c.JSON(http.StatusCreated, todo)
 	})
 }

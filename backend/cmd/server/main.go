@@ -33,16 +33,9 @@ func main() {
 	log.Println("Connected to MongoDB")
 
 	// ---- Connect to Redis ----
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:         redisAddr,
-		DialTimeout:  5 * time.Second,
-		ReadTimeout:  3 * time.Second,
-		WriteTimeout: 3 * time.Second,
-	})
-	if err := redisClient.Ping(context.Background()).Err(); err != nil {
-		log.Fatalf("Failed to connect to Redis: %v", err)
-	}
-	log.Println("Connected to Redis")
+	// Redis is used as a cache. If it is temporarily unavailable,
+	// keep the API online and serve directly from MongoDB.
+	redisClient := connectRedisWithRetry(redisAddr, 6, 5*time.Second)
 
 	// ---- Set up HTTP routes ----
 	r := gin.Default()
@@ -65,6 +58,28 @@ func main() {
 	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
+}
+
+func connectRedisWithRetry(addr string, attempts int, wait time.Duration) *redis.Client {
+	client := redis.NewClient(&redis.Options{
+		Addr:         addr,
+		DialTimeout:  5 * time.Second,
+		ReadTimeout:  3 * time.Second,
+		WriteTimeout: 3 * time.Second,
+	})
+
+	for i := 1; i <= attempts; i++ {
+		if err := client.Ping(context.Background()).Err(); err == nil {
+			log.Println("Connected to Redis")
+			return client
+		}
+		log.Printf("Redis not ready (attempt %d/%d). Retrying in %s...", i, attempts, wait)
+		time.Sleep(wait)
+	}
+
+	log.Println("Redis unavailable after retries. Continuing without cache.")
+	_ = client.Close()
+	return nil
 }
 
 // mustGetEnv exits the process if the variable is not set.
