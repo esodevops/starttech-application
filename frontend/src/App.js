@@ -19,12 +19,28 @@ function App() {
     return res.json();
   };
 
+  const readErrorMessage = async (res) => {
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      try {
+        const body = await res.json();
+        if (body && typeof body.error === 'string' && body.error.trim()) {
+          return body.error;
+        }
+      } catch (_) {
+        // Ignore JSON parse errors and fall through to generic message.
+      }
+    }
+    return `Request failed with status ${res.status}`;
+  };
+
   // Fetch all to-dos on first render
   useEffect(() => {
     fetch(`${API_URL}/api/todos`)
-      .then((res) => {
+      .then(async (res) => {
         if (!res.ok) {
-          throw new Error(`Request failed with status ${res.status}`);
+          const detail = await readErrorMessage(res);
+          throw new Error(`Could not load todos (HTTP ${res.status}): ${detail}`);
         }
         return parseJsonResponse(res);
       })
@@ -32,8 +48,8 @@ function App() {
         setTodos(Array.isArray(data) ? data : []);
         setLoading(false);
       })
-      .catch(() => {
-        setError('Could not load todos. API routing is likely not configured on CloudFront yet.');
+      .catch((err) => {
+        setError(err.message || 'Could not load todos due to an unexpected error.');
         setLoading(false);
       });
   }, []);
