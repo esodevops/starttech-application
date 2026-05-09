@@ -17,12 +17,12 @@ name: Frontend CI/CD
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     paths:
       - "frontend/**" # run when frontend code changes
       - ".github/workflows/frontend-ci-cd.yml" # run when this workflow changes
   pull_request:
-    branches: [ main ]
+    branches: [main]
     paths:
       - "frontend/**"
       - ".github/workflows/frontend-ci-cd.yml"
@@ -75,7 +75,7 @@ jobs:
 
       # Step 7 — Authenticate with AWS
       - name: Configure AWS credentials
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -85,7 +85,7 @@ jobs:
       # Step 8 — Upload the build/ folder to S3
       # --delete removes old files that are no longer in the build
       - name: Deploy to S3
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: |
           aws s3 sync build/ s3://${{ secrets.S3_BUCKET_NAME }} \
             --delete \
@@ -99,7 +99,7 @@ jobs:
       # Step 9 — Resolve CloudFront distribution ID (secret may be stale after infra recreation)
       - name: Resolve CloudFront distribution ID
         id: resolve_cf
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: |
           CF_ID="${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}"
 
@@ -126,12 +126,12 @@ jobs:
 
       # Step 10 — Clear the CloudFront edge cache so users see the new version immediately
       - name: Invalidate CloudFront cache
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: |
           aws cloudfront create-invalidation \
             --distribution-id ${{ steps.resolve_cf.outputs.distribution_id }} \
             --paths "/*"
 
       - name: Deployment complete
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: echo "Frontend deployed successfully!"
