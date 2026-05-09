@@ -7,7 +7,7 @@
 #
 # Required environment variables:
 #   S3_BUCKET_NAME              — your S3 bucket name
-#   CLOUDFRONT_DISTRIBUTION_ID  — your CloudFront ID
+#   CLOUDFRONT_DISTRIBUTION_ID  — your CloudFront ID (optional for upload)
 #   REACT_APP_API_URL           — backend ALB URL
 #
 # Usage:
@@ -21,7 +21,6 @@ set -e
 
 # Validate required variables
 : "${S3_BUCKET_NAME:?Set S3_BUCKET_NAME}"
-: "${CLOUDFRONT_DISTRIBUTION_ID:?Set CLOUDFRONT_DISTRIBUTION_ID}"
 : "${REACT_APP_API_URL:?Set REACT_APP_API_URL}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -45,12 +44,49 @@ aws s3 cp build/index.html "s3://$S3_BUCKET_NAME/index.html" \
 
 echo ""
 echo "=== Invalidating CloudFront cache ==="
-aws cloudfront create-invalidation \
-  --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
-  --paths "/*"
+if [ -z "$CLOUDFRONT_DISTRIBUTION_ID" ]; then
+  echo "Skipping invalidation: CLOUDFRONT_DISTRIBUTION_ID is not set."
+  echo "Frontend files were uploaded to S3 successfully."
+else
+  set +e
+  INVALIDATION_OUTPUT=$(aws cloudfront create-invalidation \
+    --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+    --paths "/*" 2>&1)
+  INVALIDATION_EXIT=$?
+  set -e
+
+  if [ "$INVALIDATION_EXIT" -ne 0 ]; then
+    echo "$INVALIDATION_OUTPUT"
+    if echo "$INVALIDATION_OUTPUT" | grep -q "NoSuchDistribution"; then
+      echo ""
+      echo "CloudFront distribution ID is stale or from another account."
+      echo "Update CLOUDFRONT_DISTRIBUTION_ID from starttech-infra Terraform output and retry."
+    elif echo "$INVALIDATION_OUTPUT" | grep -q "AccessDenied"; then
+      echo ""
+      echo "IAM user lacks CloudFront permissions."
+      echo "Grant cloudfront:CreateInvalidation and cloudfront:GetDistribution on the distribution ARN."
+    fi
+    echo "Continuing without invalidation."
+  else
+    echo "$INVALIDATION_OUTPUT"
+  fi
+fi
 
 echo ""
-echo "Frontend deployed! Visit: https://$(aws cloudfront get-distribution \
-  --id "$CLOUDFRONT_DISTRIBUTION_ID" \
-  --query "Distribution.DomainName" \
-  --output text)"
+if [ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]; then
+  set +e
+  DISTRIBUTION_DOMAIN=$(aws cloudfront get-distribution \
+    --id "$CLOUDFRONT_DISTRIBUTION_ID" \
+    --query "Distribution.DomainName" \
+    --output text 2>/dev/null)
+  LOOKUP_EXIT=$?
+  set -e
+
+  if [ "$LOOKUP_EXIT" -eq 0 ] && [ -n "$DISTRIBUTION_DOMAIN" ] && [ "$DISTRIBUTION_DOMAIN" != "None" ]; then
+    echo "Frontend deployed! Visit: https://$DISTRIBUTION_DOMAIN"
+  else
+    echo "Frontend deployed to S3 bucket: s3://$S3_BUCKET_NAME"
+  fi
+else
+  echo "Frontend deployed to S3 bucket: s3://$S3_BUCKET_NAME"
+fi
