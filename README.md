@@ -2,6 +2,8 @@
 
 # StartTech Application
 
+![StartTech Project](../starttech-img.png)
+
 This is the full-stack application for StartTech, forked from [much-to-do](https://github.com/Innocent9712/much-to-do/tree/feature/full-stack).
 
 It contains:
