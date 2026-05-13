@@ -136,15 +136,59 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      # Step 11 — Update the Launch Template with the new image tag
+      # Step 11 — Resolve ASG and Launch Template IDs
+      - name: Resolve deployment targets
+        id: resolve_targets
+        run: |
+          ASG_NAME="${{ secrets.ASG_NAME }}"
+
+          # Fallback to legacy default if ASG_NAME secret is not set.
+          if [ -z "$ASG_NAME" ] || [ "$ASG_NAME" = "None" ]; then
+            ASG_NAME="starttech-asg"
+          fi
+
+          # Validate ASG exists; otherwise, discover a best-match ASG ending in -asg.
+          if ! aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "$ASG_NAME" --query "AutoScalingGroups[0].AutoScalingGroupName" --output text | grep -vq "None"; then
+            DISCOVERED_ASG=$(aws autoscaling describe-auto-scaling-groups \
+              --query "AutoScalingGroups[?ends_with(AutoScalingGroupName, '-asg')].AutoScalingGroupName | [0]" \
+              --output text)
+
+            if [ -z "$DISCOVERED_ASG" ] || [ "$DISCOVERED_ASG" = "None" ]; then
+              echo "Could not resolve Auto Scaling Group name."
+              echo "Set ASG_NAME secret to your Terraform output autoscaling_group_name."
+              exit 1
+            fi
+
+            ASG_NAME="$DISCOVERED_ASG"
+          fi
+
+          # Resolve launch template from ASG to avoid tag-based lookup failures.
+          LT_ID=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names "$ASG_NAME" \
+            --query "AutoScalingGroups[0].LaunchTemplate.LaunchTemplateId" \
+            --output text)
+
+          # Support ASGs configured with MixedInstancesPolicy.
+          if [ -z "$LT_ID" ] || [ "$LT_ID" = "None" ]; then
+            LT_ID=$(aws autoscaling describe-auto-scaling-groups \
+              --auto-scaling-group-names "$ASG_NAME" \
+              --query "AutoScalingGroups[0].MixedInstancesPolicy.LaunchTemplate.LaunchTemplateSpecification.LaunchTemplateId" \
+              --output text)
+          fi
+
+          if [ -z "$LT_ID" ] || [ "$LT_ID" = "None" ]; then
+            echo "Could not resolve Launch Template ID from ASG $ASG_NAME."
+            exit 1
+          fi
+
+          echo "asg_name=$ASG_NAME" >> "$GITHUB_OUTPUT"
+          echo "launch_template_id=$LT_ID" >> "$GITHUB_OUTPUT"
+
+      # Step 12 — Update the Launch Template with the new image tag
       # New instances started by the ASG will use this new image
       - name: Update Launch Template with new image
         run: |
-          # Get the current launch template ID
-          LT_ID=$(aws ec2 describe-launch-templates \
-            --filters "Name=tag:Name,Values=starttech-launch-template" \
-            --query "LaunchTemplates[0].LaunchTemplateId" \
-            --output text)
+          LT_ID="${{ steps.resolve_targets.outputs.launch_template_id }}"
 
           # Get the current user_data and update the Docker image tag
           CURRENT_USER_DATA=$(aws ec2 describe-launch-template-versions \
@@ -161,23 +205,23 @@ jobs:
             --source-version '$Latest' \
             --launch-template-data "{\"UserData\":\"$(echo "$NEW_USER_DATA" | base64 -w0)\"}"
 
-      # Step 12 — Trigger a rolling instance refresh
+      # Step 13 — Trigger a rolling instance refresh
       # AWS replaces old instances one at a time, keeping at least 50% healthy
       - name: Start ASG instance refresh (rolling deploy)
         run: |
           aws autoscaling start-instance-refresh \
-            --auto-scaling-group-name starttech-asg \
+            --auto-scaling-group-name "${{ steps.resolve_targets.outputs.asg_name }}" \
             --strategy Rolling \
             --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 120}'
 
-      # Step 13 — Wait for the refresh to complete
+      # Step 14 — Wait for rolling deploy to complete
       - name: Wait for rolling deploy to complete
         run: |
           echo "Waiting for instance refresh to complete..."
           # Poll every 30 seconds for up to 10 minutes
           for i in $(seq 1 20); do
             STATUS=$(aws autoscaling describe-instance-refreshes \
-              --auto-scaling-group-name starttech-asg \
+              --auto-scaling-group-name "${{ steps.resolve_targets.outputs.asg_name }}" \
               --query "InstanceRefreshes[0].Status" \
               --output text)
             echo "Status: $STATUS"
@@ -193,7 +237,7 @@ jobs:
           echo "Timeout waiting for deploy"
           exit 1
 
-      # Step 14 — Smoke test: check that the /health endpoint returns 200
+      # Step 15 — Smoke test: check that the /health endpoint returns 200
       - name: Smoke test
         run: |
           ALB_DNS=$(aws elbv2 describe-load-balancers \
