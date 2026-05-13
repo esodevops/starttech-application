@@ -7,7 +7,7 @@
 # -------------------------------------------------
 
 # ---- Stage 1: Build ----
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 
@@ -17,7 +17,7 @@ RUN go mod download
 
 # Copy source code and build the binary
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/api
 
 # ---- Stage 2: Run ----
 # Use Alpine runtime with CA certs so TLS connections (MongoDB Atlas) work reliably.

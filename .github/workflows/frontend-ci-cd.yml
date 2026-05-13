@@ -1,5 +1,5 @@
 # -------------------------------------------------
-# Frontend CI/CD Pipeline (React → S3 + CloudFront)
+# Frontend CI/CD Pipeline (Vite app → S3 + CloudFront)
 #
 # Triggers on every push to main that changes
 # anything under the frontend/ directory.
@@ -31,7 +31,7 @@ on:
 
 jobs:
   build-and-deploy:
-    name: Build & Deploy React App
+    name: Build & Deploy Frontend App
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -56,20 +56,18 @@ jobs:
 
       # Step 4 — Run unit tests
       - name: Run tests
-        run: npm test -- --watchAll=false --passWithNoTests
+        run: npm run test --if-present
 
       # Step 5 — Security scan: report vulnerabilities but do not fail the build
-      # react-scripts@5.0.1 has known unfixable transitive high-severity deps;
-      # using --audit-level=critical to only block on critical issues.
       - name: Security scan
         run: npm audit --audit-level=critical || true
 
-      # Step 6 — Build the production React bundle
+      # Step 6 — Build the production frontend bundle
       - name: Build
         run: npm run build
         env:
           # The backend API URL is injected at build time
-          REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
+          VITE_API_BASE_URL: ${{ secrets.REACT_APP_API_URL }}
 
       # ---- Deploy steps only run on push to main (not on PRs) ----
 
@@ -82,18 +80,18 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      # Step 8 — Upload the build/ folder to S3
-      # --delete removes old files that are no longer in the build
+      # Step 8 — Upload the dist/ folder to S3
+      # --delete removes old files that are no longer in the build output
       - name: Deploy to S3
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: |
-          aws s3 sync build/ s3://${{ secrets.S3_BUCKET_NAME }} \
+          aws s3 sync dist/ s3://${{ secrets.S3_BUCKET_NAME }} \
             --delete \
             --cache-control "max-age=31536000,public" \
             --exclude "index.html"
 
           # Upload index.html separately with no-cache so users always get the latest version
-          aws s3 cp build/index.html s3://${{ secrets.S3_BUCKET_NAME }}/index.html \
+          aws s3 cp dist/index.html s3://${{ secrets.S3_BUCKET_NAME }}/index.html \
             --cache-control "no-cache,no-store,must-revalidate"
 
       # Step 9 — Resolve CloudFront distribution ID (secret may be stale after infra recreation)

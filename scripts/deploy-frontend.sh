@@ -2,13 +2,13 @@
 # -------------------------------------------------
 # deploy-frontend.sh
 #
-# Builds the React app and uploads it to S3, then
+# Builds the frontend app and uploads it to S3, then
 # clears the CloudFront cache.
 #
 # Required environment variables:
 #   S3_BUCKET_NAME              — your S3 bucket name
 #   CLOUDFRONT_DISTRIBUTION_ID  — your CloudFront ID (optional for upload)
-#   REACT_APP_API_URL           — backend ALB URL
+#   REACT_APP_API_URL           — backend ALB URL (legacy, still supported)
 #
 # Usage:
 #   export S3_BUCKET_NAME=starttech-frontend-prod
@@ -26,20 +26,21 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/../frontend"
 
-echo "=== Building React app ==="
+echo "=== Building frontend app ==="
 npm ci
+export VITE_API_BASE_URL="$REACT_APP_API_URL"
 npm run build
 
 echo ""
 echo "=== Uploading to S3 ==="
 # Upload everything except index.html with long cache (content-hashed filenames)
-aws s3 sync build/ "s3://$S3_BUCKET_NAME" \
+aws s3 sync dist/ "s3://$S3_BUCKET_NAME" \
   --delete \
   --exclude "index.html" \
   --cache-control "max-age=31536000,public"
 
 # Upload index.html with no-cache so browsers always get the latest shell
-aws s3 cp build/index.html "s3://$S3_BUCKET_NAME/index.html" \
+aws s3 cp dist/index.html "s3://$S3_BUCKET_NAME/index.html" \
   --cache-control "no-cache,no-store,must-revalidate"
 
 echo ""
