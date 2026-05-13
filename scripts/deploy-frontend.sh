@@ -8,7 +8,7 @@
 # Required environment variables:
 #   S3_BUCKET_NAME              — your S3 bucket name
 #   CLOUDFRONT_DISTRIBUTION_ID  — your CloudFront ID (optional for upload)
-#   REACT_APP_API_URL           — backend ALB URL (legacy, still supported)
+#   REACT_APP_API_URL           — optional API URL override (legacy, still supported)
 #
 # Usage:
 #   export S3_BUCKET_NAME=starttech-frontend-prod
@@ -21,14 +21,23 @@ set -e
 
 # Validate required variables
 : "${S3_BUCKET_NAME:?Set S3_BUCKET_NAME}"
-: "${REACT_APP_API_URL:?Set REACT_APP_API_URL}"
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/../frontend"
 
 echo "=== Building frontend app ==="
 npm ci
-export VITE_API_BASE_URL="$REACT_APP_API_URL"
+
+# Optional explicit API URL override.
+# If HTTPS frontend is used, injecting an HTTP API URL causes mixed-content failures.
+if [ -n "${REACT_APP_API_URL:-}" ]; then
+  if [[ "$REACT_APP_API_URL" == http://* ]]; then
+    echo "Warning: REACT_APP_API_URL is HTTP. Ignoring it to avoid mixed-content errors."
+    unset VITE_API_BASE_URL
+  else
+    export VITE_API_BASE_URL="$REACT_APP_API_URL"
+  fi
+fi
+
 npm run build
 
 echo ""

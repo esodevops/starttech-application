@@ -66,8 +66,8 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          # The backend API URL is injected at build time
-          VITE_API_BASE_URL: ${{ secrets.REACT_APP_API_URL }}
+          # Optional explicit API base URL. Leave empty to use same-origin proxy.
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
 
       # ---- Deploy steps only run on push to main (not on PRs) ----
 
