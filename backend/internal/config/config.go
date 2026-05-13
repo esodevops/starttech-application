@@ -57,6 +57,7 @@ func LoadConfig(path string) (config Config, err error) {
 
 	// Set default values
 	viper.SetDefault("PORT", "8080")
+	viper.SetDefault("DB_NAME", "much_todo_db")
 	viper.SetDefault("ENABLE_CACHE", false)
 	viper.SetDefault("JWT_EXPIRATION_HOURS", 72)
 	viper.SetDefault("COOKIE_DOMAINS", []string{"localhost"})
