@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -31,6 +32,29 @@ func LoadConfig(path string) (config Config, err error) {
 
 	viper.AutomaticEnv()
 
+	// Bind expected keys so values from environment variables are available
+	// consistently when loading into the Config struct.
+	keys := []string{
+		"PORT",
+		"MONGO_URI",
+		"DB_NAME",
+		"JWT_SECRET_KEY",
+		"JWT_EXPIRATION_HOURS",
+		"ENABLE_CACHE",
+		"REDIS_ADDR",
+		"REDIS_PASSWORD",
+		"LOG_LEVEL",
+		"LOG_FORMAT",
+		"COOKIE_DOMAINS",
+		"SECURE_COOKIE",
+		"ALLOWED_ORIGINS",
+	}
+	for _, key := range keys {
+		if bindErr := viper.BindEnv(key); bindErr != nil {
+			return config, bindErr
+		}
+	}
+
 	// Set default values
 	viper.SetDefault("PORT", "8080")
 	viper.SetDefault("ENABLE_CACHE", false)
@@ -41,14 +65,27 @@ func LoadConfig(path string) (config Config, err error) {
 
 	err = viper.ReadInConfig()
 	if err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+		var configFileNotFoundErr viper.ConfigFileNotFoundError
+		if !errors.As(err, &configFileNotFoundErr) && !strings.Contains(err.Error(), "Config File \".env\" Not Found") {
 			return
 		}
+		err = nil
 	}
 
-	err = viper.Unmarshal(&config)
-	if err != nil {
-		return
+	config = Config{
+		ServerPort:         viper.GetString("PORT"),
+		MongoURI:           viper.GetString("MONGO_URI"),
+		DBName:             viper.GetString("DB_NAME"),
+		JWTSecretKey:       viper.GetString("JWT_SECRET_KEY"),
+		JWTExpirationHours: viper.GetInt("JWT_EXPIRATION_HOURS"),
+		EnableCache:        viper.GetBool("ENABLE_CACHE"),
+		RedisAddr:          viper.GetString("REDIS_ADDR"),
+		RedisPassword:      viper.GetString("REDIS_PASSWORD"),
+		LogLevel:           viper.GetString("LOG_LEVEL"),
+		LogFormat:          viper.GetString("LOG_FORMAT"),
+		SecureCookie:       viper.GetBool("SECURE_COOKIE"),
+		AllowedOrigins:     viper.GetStringSlice("ALLOWED_ORIGINS"),
+		CookieDomains:      viper.GetStringSlice("COOKIE_DOMAINS"),
 	}
 
 	// Manually handle comma-separated strings for slices if viper didn't split them

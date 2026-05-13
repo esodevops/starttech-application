@@ -208,23 +208,74 @@ jobs:
       # Step 13 — Trigger a rolling instance refresh
       # AWS replaces old instances one at a time, keeping at least 50% healthy
       - name: Start ASG instance refresh (rolling deploy)
+        id: start_refresh
         run: |
-          aws autoscaling start-instance-refresh \
-            --auto-scaling-group-name "${{ steps.resolve_targets.outputs.asg_name }}" \
+          ASG_NAME="${{ steps.resolve_targets.outputs.asg_name }}"
+
+          set +e
+          START_OUTPUT=$(aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name "$ASG_NAME" \
             --strategy Rolling \
-            --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 120}'
+            --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 120}' 2>&1)
+          START_EXIT=$?
+          set -e
+
+          if [ "$START_EXIT" -eq 0 ]; then
+            REFRESH_ID=$(echo "$START_OUTPUT" | sed -n 's/.*"InstanceRefreshId": "\([^"]*\)".*/\1/p')
+            echo "Started new instance refresh: $REFRESH_ID"
+            echo "refresh_id=$REFRESH_ID" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if echo "$START_OUTPUT" | grep -q "InstanceRefreshInProgress"; then
+            echo "Instance refresh already in progress. Reusing active refresh."
+            REFRESH_ID=$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name "$ASG_NAME" \
+              --query "InstanceRefreshes[?Status=='InProgress' || Status=='Pending'].InstanceRefreshId | [0]" \
+              --output text)
+
+            if [ -z "$REFRESH_ID" ] || [ "$REFRESH_ID" = "None" ]; then
+              echo "A refresh is reported in progress but no active refresh ID was found."
+              echo "$START_OUTPUT"
+              exit 1
+            fi
+
+            echo "Using existing instance refresh: $REFRESH_ID"
+            echo "refresh_id=$REFRESH_ID" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "$START_OUTPUT"
+          exit "$START_EXIT"
 
       # Step 14 — Wait for rolling deploy to complete
       - name: Wait for rolling deploy to complete
         run: |
+          ASG_NAME="${{ steps.resolve_targets.outputs.asg_name }}"
+          REFRESH_ID="${{ steps.start_refresh.outputs.refresh_id }}"
+
+          if [ -z "$REFRESH_ID" ] || [ "$REFRESH_ID" = "None" ]; then
+            echo "No instance refresh ID available to monitor."
+            exit 1
+          fi
+
           echo "Waiting for instance refresh to complete..."
-          # Poll every 30 seconds for up to 10 minutes
-          for i in $(seq 1 20); do
+          echo "Tracking refresh ID: $REFRESH_ID"
+
+          # Poll every 30 seconds for up to 30 minutes
+          for i in $(seq 1 60); do
             STATUS=$(aws autoscaling describe-instance-refreshes \
-              --auto-scaling-group-name "${{ steps.resolve_targets.outputs.asg_name }}" \
+              --auto-scaling-group-name "$ASG_NAME" \
+              --instance-refresh-ids "$REFRESH_ID" \
               --query "InstanceRefreshes[0].Status" \
               --output text)
-            echo "Status: $STATUS"
+            PCT=$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name "$ASG_NAME" \
+              --instance-refresh-ids "$REFRESH_ID" \
+              --query "InstanceRefreshes[0].PercentageComplete" \
+              --output text)
+
+            echo "Status: $STATUS | Progress: ${PCT}%"
             if [ "$STATUS" = "Successful" ]; then
               echo "Deploy successful!"
               exit 0
