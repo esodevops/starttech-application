@@ -62,7 +62,7 @@ func LoadConfig(path string) (config Config, err error) {
 	viper.SetDefault("JWT_EXPIRATION_HOURS", 72)
 	viper.SetDefault("COOKIE_DOMAINS", []string{"localhost"})
 	viper.SetDefault("SECURE_COOKIE", false)
-	viper.SetDefault("ALLOWED_ORIGINS", []string{"http://localhost:5173"})
+	viper.SetDefault("ALLOWED_ORIGINS", []string{"http://localhost:5173", "https://*.cloudfront.net"})
 
 	err = viper.ReadInConfig()
 	if err != nil {

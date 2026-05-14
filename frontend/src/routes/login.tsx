@@ -39,7 +39,9 @@ function Login() {
       return response.data;
     },
     onSuccess: (data) => {
-      setAuthToken(data.token || null);
+      if (data.token) {
+        setAuthToken(data.token);
+      }
       // Update the user in the auth context
       setUser(data.user);
       // Also set in query cache

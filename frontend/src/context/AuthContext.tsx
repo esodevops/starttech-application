@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient, setAuthToken } from '@/lib/apiClient';
+import { apiClient, setAuthToken, getAuthToken } from '@/lib/apiClient';
 import type { User } from '@/types/auth.types';
 import { AuthContext } from '@/hooks/useAuth';
 
@@ -45,7 +45,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     const checkUserStatus = async () => {
       setIsLoading(true);
-      await refetch();
+      // Only fetch /users/me if there's a token stored
+      const token = getAuthToken();
+      if (token) {
+        await refetch();
+      }
       setIsLoading(false);
     };
     checkUserStatus();

@@ -185,12 +185,6 @@ func setupRouter(db *mongo.Client, cfg config.Config, tokenSvc *auth.TokenServic
 		c.JSON(http.StatusOK, gin.H{"message": "Welcome to MuchToDo API"})
 	})
 
-	// Test route to debug /todos issue
-	router.GET("/test-todos", func(c *gin.Context) {
-		println("=== TEST TODOS ROUTE HIT ===")
-		c.JSON(http.StatusOK, gin.H{"message": "Test todos route works!"})
-	})
-
 	// Handle 404
 	router.NoRoute(func(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Route not found"})

@@ -100,11 +100,9 @@ func (h *TodoHandler) CreateTodo(c *gin.Context) {
 func (h *TodoHandler) GetAllTodos(c *gin.Context) {
 	userID, err := getUserIDFromContext(c)
 	if err != nil {
-		println("ERROR: Failed to get user ID from context:", err.Error())
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
 		return
 	}
-	println("User ID:", userID.Hex())
 
 	var todos []models.Todo
 	filter := bson.M{"userId": userID}
