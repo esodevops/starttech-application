@@ -1,8 +1,9 @@
 package handlers
 
-import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -15,14 +16,15 @@ import (
 	"github.com/Innocent9712/much-to-do/Server/MuchToDo/internal/models"
 )
 
-// TodoHandler holds the database collection for todos.
+// TodoHandler holds the database collection for todos and cache.
 type TodoHandler struct {
 	collection *mongo.Collection
+	cache      cache.Cache
 }
 
 // NewTodoHandler creates a new handler for ToDo operations.
-func NewTodoHandler(collection *mongo.Collection) *TodoHandler {
-	return &TodoHandler{collection: collection}
+func NewTodoHandler(collection *mongo.Collection, cache cache.Cache) *TodoHandler {
+	return &TodoHandler{collection: collection, cache: cache}
 }
 
 // getUserIDFromContext retrieves the user ID from the Gin context.
@@ -77,14 +79,19 @@ func (h *TodoHandler) CreateTodo(c *gin.Context) {
 		UpdatedAt:   now,
 	}
 
-	result, err := h.collection.InsertOne(context.Background(), newTodo)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create todo"})
-		return
-	}
+	       result, err := h.collection.InsertOne(context.Background(), newTodo)
+	       if err != nil {
+		       c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create todo"})
+		       return
+	       }
 
-	newTodo.ID = result.InsertedID.(primitive.ObjectID)
-	c.JSON(http.StatusCreated, newTodo)
+	       newTodo.ID = result.InsertedID.(primitive.ObjectID)
+
+	       // Invalidate cache for this user
+	       cacheKey := fmt.Sprintf("todos:user:%s", userID.Hex())
+	       _ = h.cache.Delete(context.Background(), cacheKey)
+
+	       c.JSON(http.StatusCreated, newTodo)
 }
 
 // GetAllTodos godoc
@@ -104,27 +111,38 @@ func (h *TodoHandler) GetAllTodos(c *gin.Context) {
 		return
 	}
 
-	var todos []models.Todo
-	filter := bson.M{"userId": userID}
-	opts := options.Find().SetSort(bson.D{{Key: "createdAt", Value: -1}})
+	       var todos []models.Todo
+	       cacheKey := fmt.Sprintf("todos:user:%s", userID.Hex())
+	       // Try cache first
+	       if err := h.cache.Get(context.Background(), cacheKey, &todos); err == nil && len(todos) > 0 {
+		       c.JSON(http.StatusOK, todos)
+		       return
+	       }
 
-	cursor, err := h.collection.Find(context.Background(), filter, opts)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch todos"})
-		return
-	}
-	defer cursor.Close(context.Background())
+	       // Not in cache, fetch from DB
+	       filter := bson.M{"userId": userID}
+	       opts := options.Find().SetSort(bson.D{{Key: "createdAt", Value: -1}})
 
-	if err = cursor.All(context.Background(), &todos); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode todos"})
-		return
-	}
+	       cursor, err := h.collection.Find(context.Background(), filter, opts)
+	       if err != nil {
+		       c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch todos"})
+		       return
+	       }
+	       defer cursor.Close(context.Background())
 
-	if todos == nil {
-		todos = []models.Todo{}
-	}
+	       if err = cursor.All(context.Background(), &todos); err != nil {
+		       c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode todos"})
+		       return
+	       }
 
-	c.JSON(http.StatusOK, todos)
+	       if todos == nil {
+		       todos = []models.Todo{}
+	       }
+
+	       // Store in cache (1 hour TTL)
+	       _ = h.cache.Set(context.Background(), cacheKey, todos, time.Hour)
+
+	       c.JSON(http.StatusOK, todos)
 }
 
 // GetTodoByID godoc
@@ -231,6 +249,10 @@ func (h *TodoHandler) UpdateTodo(c *gin.Context) {
 		return
 	}
 
+	// Invalidate cache for this user
+	cacheKey := fmt.Sprintf("todos:user:%s", userID.Hex())
+	_ = h.cache.Delete(context.Background(), cacheKey)
+
 	c.JSON(http.StatusOK, gin.H{"message": "Todo updated successfully"})
 }
 
@@ -271,6 +293,10 @@ func (h *TodoHandler) DeleteTodo(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Todo not found or you don't have permission"})
 		return
 	}
+
+	// Invalidate cache for this user
+	cacheKey := fmt.Sprintf("todos:user:%s", userID.Hex())
+	_ = h.cache.Delete(context.Background(), cacheKey)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Todo deleted successfully"})
 }

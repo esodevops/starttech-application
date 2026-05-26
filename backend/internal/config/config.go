@@ -22,6 +22,8 @@ type Config struct {
 	CookieDomains      []string `mapstructure:"COOKIE_DOMAINS"`
 	SecureCookie       bool     `mapstructure:"SECURE_COOKIE"`
 	AllowedOrigins     []string `mapstructure:"ALLOWED_ORIGINS"`
+	CloudWatchLogGroup string   `mapstructure:"CLOUDWATCH_LOG_GROUP"`
+	CloudWatchLogStream string  `mapstructure:"CLOUDWATCH_LOG_STREAM"`
 }
 
 // LoadConfig reads configuration from file or environment variables.
@@ -34,21 +36,23 @@ func LoadConfig(path string) (config Config, err error) {
 
 	// Bind expected keys so values from environment variables are available
 	// consistently when loading into the Config struct.
-	keys := []string{
-		"PORT",
-		"MONGO_URI",
-		"DB_NAME",
-		"JWT_SECRET_KEY",
-		"JWT_EXPIRATION_HOURS",
-		"ENABLE_CACHE",
-		"REDIS_ADDR",
-		"REDIS_PASSWORD",
-		"LOG_LEVEL",
-		"LOG_FORMAT",
-		"COOKIE_DOMAINS",
-		"SECURE_COOKIE",
-		"ALLOWED_ORIGINS",
-	}
+	       keys := []string{
+		       "PORT",
+		       "MONGO_URI",
+		       "DB_NAME",
+		       "JWT_SECRET_KEY",
+		       "JWT_EXPIRATION_HOURS",
+		       "ENABLE_CACHE",
+		       "REDIS_ADDR",
+		       "REDIS_PASSWORD",
+		       "LOG_LEVEL",
+		       "LOG_FORMAT",
+		       "COOKIE_DOMAINS",
+		       "SECURE_COOKIE",
+		       "ALLOWED_ORIGINS",
+		       "CLOUDWATCH_LOG_GROUP",
+		       "CLOUDWATCH_LOG_STREAM",
+	       }
 	for _, key := range keys {
 		if bindErr := viper.BindEnv(key); bindErr != nil {
 			return config, bindErr
