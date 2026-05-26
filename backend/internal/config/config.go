@@ -91,6 +91,8 @@ func LoadConfig(path string) (config Config, err error) {
 		SecureCookie:       viper.GetBool("SECURE_COOKIE"),
 		AllowedOrigins:     viper.GetStringSlice("ALLOWED_ORIGINS"),
 		CookieDomains:      viper.GetStringSlice("COOKIE_DOMAINS"),
+		CloudWatchLogGroup: viper.GetString("CLOUDWATCH_LOG_GROUP"),
+		CloudWatchLogStream: viper.GetString("CLOUDWATCH_LOG_STREAM"),
 	}
 
 	// Manually handle comma-separated strings for slices if viper didn't split them
