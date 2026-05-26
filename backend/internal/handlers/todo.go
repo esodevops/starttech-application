@@ -1,19 +1,20 @@
 package handlers
 
+import (
 	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"net/http"
-	"time"
+    "errors"
+    "fmt"
+    "net/http"
+    "time"
 
-	"github.com/gin-gonic/gin"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+    "github.com/gin-gonic/gin"
+    "go.mongodb.org/mongo-driver/bson"
+    "go.mongodb.org/mongo-driver/bson/primitive"
+    "go.mongodb.org/mongo-driver/mongo"
+    "go.mongodb.org/mongo-driver/mongo/options"
 
 	"github.com/Innocent9712/much-to-do/Server/MuchToDo/internal/models"
+	"github.com/Innocent9712/much-to-do/Server/MuchToDo/internal/cache"
 )
 
 // TodoHandler holds the database collection for todos and cache.

@@ -2,12 +2,12 @@ package logger
 
 import (
 	"context"
-	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
 )
 
 // CloudWatchWriter implements io.Writer to send logs to AWS CloudWatch Logs
@@ -35,16 +35,16 @@ func NewCloudWatchWriter(logGroup, logStream string) (*CloudWatchWriter, error) 
 
 func (w *CloudWatchWriter) Write(p []byte) (n int, err error) {
 	ctx := context.Background()
-	input := &cloudwatchlogs.PutLogEventsInput{
-		LogEvents: []cloudwatchlogs.types.InputLogEvent{
-			{
-				Message:   aws.String(string(p)),
-				Timestamp: aws.Int64(time.Now().UnixMilli()),
-			},
-		},
-		LogGroupName:  aws.String(w.logGroupName),
-		LogStreamName: aws.String(w.logStreamName),
-	}
+	       input := &cloudwatchlogs.PutLogEventsInput{
+		       LogEvents: []types.InputLogEvent{
+			       {
+				       Message:   aws.String(string(p)),
+				       Timestamp: aws.Int64(time.Now().UnixMilli()),
+			       },
+		       },
+		       LogGroupName:  aws.String(w.logGroupName),
+		       LogStreamName: aws.String(w.logStreamName),
+	       }
 	if w.sequenceToken != nil {
 		input.SequenceToken = w.sequenceToken
 	}

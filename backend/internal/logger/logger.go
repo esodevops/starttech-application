@@ -1,11 +1,11 @@
 package logger
 
 import (
-	"log/slog"
-	"os"
-
-	"github.com/Innocent9712/much-to-do/Server/MuchToDo/internal/config"
-	"github.com/Innocent9712/much-to-do/Server/MuchToDo/internal/logger"
+       "io"
+       "log/slog"
+       "os"
+       "github.com/Innocent9712/much-to-do/Server/MuchToDo/internal/config"
+)
 
 // InitLogger initializes the global structured logger based on the application config.
 func InitLogger(cfg config.Config) {
@@ -27,15 +27,15 @@ func InitLogger(cfg config.Config) {
 	       Level: level,
        }
 
-       var outputWriter = os.Stdout
+       var outputWriter io.Writer = os.Stdout
        // If CloudWatch logging is enabled, use CloudWatchWriter
        if cfg.CloudWatchLogGroup != "" && cfg.CloudWatchLogStream != "" {
-	       cw, err := logger.NewCloudWatchWriter(cfg.CloudWatchLogGroup, cfg.CloudWatchLogStream)
-	       if err == nil {
-		       outputWriter = cw
-	       } else {
-		       // fallback to stdout, optionally log the error
-	       }
+              cw, err := NewCloudWatchWriter(cfg.CloudWatchLogGroup, cfg.CloudWatchLogStream)
+              if err == nil {
+                     outputWriter = cw
+              } else {
+                     // fallback to stdout, optionally log the error
+              }
        }
 
        if cfg.LogFormat == "json" {
