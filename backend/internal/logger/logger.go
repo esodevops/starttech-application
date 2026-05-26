@@ -34,7 +34,8 @@ func InitLogger(cfg config.Config) {
               if err == nil {
                      outputWriter = cw
               } else {
-                     // fallback to stdout, optionally log the error
+                     // fallback to stdout, log the error
+                     slog.Error("Failed to initialize CloudWatchWriter", "error", err)
               }
        }
 
@@ -46,4 +47,6 @@ func InitLogger(cfg config.Config) {
 
        logger := slog.New(logHandler)
        slog.SetDefault(logger)
+       // Emit a test log to verify CloudWatch streaming
+       slog.Info("CloudWatch log test event: logger initialized")
 }
