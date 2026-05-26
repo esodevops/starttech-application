@@ -53,19 +53,27 @@ func NewCacheService(cfg config.Config) Cache {
 }
 
 func (r *RedisCache) Get(ctx context.Context, key string, dest interface{}) error {
-	val, err := r.client.Get(ctx, key).Result()
-	if err != nil {
-		return err // redis.Nil if not found
-	}
-	return json.Unmarshal([]byte(val), dest)
+       val, err := r.client.Get(ctx, key).Result()
+       if err != nil {
+	       if err == redis.Nil {
+		       log.Printf("[CACHE MISS] key=%s", key)
+	       } else {
+		       log.Printf("[CACHE ERROR] key=%s err=%v", key, err)
+	       }
+	       return err // redis.Nil if not found
+       }
+       log.Printf("[CACHE HIT] key=%s", key)
+       return json.Unmarshal([]byte(val), dest)
 }
 
 func (r *RedisCache) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
-	p, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	return r.client.Set(ctx, key, p, expiration).Err()
+       p, err := json.Marshal(value)
+       if err != nil {
+	       log.Printf("[CACHE SET ERROR] key=%s err=%v", key, err)
+	       return err
+       }
+       log.Printf("[CACHE SET] key=%s exp=%s", key, expiration)
+       return r.client.Set(ctx, key, p, expiration).Err()
 }
 
 // SetMany stores multiple key-value pairs in the cache using a pipeline for efficiency.
@@ -85,6 +93,7 @@ func (r *RedisCache) SetMany(ctx context.Context, data map[string]interface{}, e
 }
 
 func (r *RedisCache) Delete(ctx context.Context, key string) error {
+	log.Printf("[CACHE DELETE] key=%s", key)
 	return r.client.Del(ctx, key).Err()
 }
 
